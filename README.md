@@ -4,7 +4,7 @@ A single self-contained HTML page (`index.html`) that upgrades the `com.cybercas
 
 ## How it works
 
-1. The page loads two external scripts: jQuery 1.11.3 from `http://code.jquery.com/jquery-1.11.3.min.js` (the same URL/version cybdevice itself falls back to; if it fails, cybdevice self-loads jQuery) and the device bridge from `http://my.cybercast.com.au/js/device/cybdevice.2.2.1.js`. If the bridge script fails to load (offline, 404), the page shows a message and reloads itself every 30s until it succeeds. It then waits for `Device.ready`.
+1. The page loads two external scripts: jQuery 1.11.3 from `https://code.jquery.com/jquery-1.11.3.min.js` (the same URL/version cybdevice itself falls back to; if it fails, cybdevice self-loads jQuery) and the device bridge from `https://my.cybercast.com.au/js/device/cybdevice.2.2.1.js`. If the bridge script fails to load (offline, 404), the page shows a message and reloads itself every 30s until it succeeds. It then waits for `Device.ready`.
 2. It calls `POST https://app.cybercast.com.au/api/device/v1/apk/download` with `{"packageName": "com.cybercast"}`, which returns the latest version number and a presigned S3 download URL (valid 1 hour, no auth required).
 3. It compares the device's installed version (`Device.info.app_ver_code`) against the latest:
    - **Already up to date** → shows "Up to date" and silently re-checks every **6 hours** (the page can be left up indefinitely).
@@ -26,8 +26,6 @@ When opened outside a device (desktop browser), cybdevice's simulate mode kicks 
 ## Deployment
 
 Host `index.html` anywhere (S3, `client.cybercast.com.au`, or a local device path) and point a campaign web element at it. No sibling files needed.
-
-Note: both external scripts are referenced over plain `http://` (matching existing campaign assets and avoiding TLS trust issues on old Android devices). If you host `index.html` on an **https** origin, browsers will block http scripts as mixed content — change both `<script src>` URLs to `https://` in that case (both hosts serve https; just confirm old devices trust the certs).
 
 ## Rebuilding
 
