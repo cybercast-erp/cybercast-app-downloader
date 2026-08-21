@@ -104,13 +104,13 @@
     <div id="corner"></div>
 
     <script src="https://code.jquery.com/jquery-1.11.3.min.js"></script>
-    <script src="https://my.cybercast.com.au/js/device/cybdevice.2.2.1.js"></script>
+    <script src="cybdevice.2.2.1.js"></script>
     <script>
       /* Cybercast APK self-update — ES5 only (Chrome 39 WebView) */
       (function () {
         "use strict";
 
-        /* cybdevice.2.2.1.js loads from an external host; if it failed
+        /* cybdevice.2.2.1.js loads as a sibling file; if it failed
 	   (offline, 404), we cannot talk to the device — retry by reloading. */
         if (!window.Device) {
           document.getElementById("status").innerHTML =

@@ -4,7 +4,7 @@ A single self-contained HTML page (`index.html`) that upgrades the `com.cybercas
 
 ## How it works
 
-1. The page loads two external scripts: jQuery 1.11.3 from `https://code.jquery.com/jquery-1.11.3.min.js` (the same URL/version cybdevice itself falls back to; if it fails, cybdevice self-loads jQuery) and the device bridge from `https://my.cybercast.com.au/js/device/cybdevice.2.2.1.js`. If the bridge script fails to load (offline, 404), the page shows a message and reloads itself every 30s until it succeeds. It then waits for `Device.ready`.
+1. The page loads two external scripts: jQuery 1.11.3 from `https://code.jquery.com/jquery-1.11.3.min.js` (the same URL/version cybdevice itself falls back to; if it fails, cybdevice self-loads jQuery) and the device bridge from `cybdevice.2.2.1.js` — this repo's copy, referenced relatively, so it must be deployed as a sibling of `index.html`. If the bridge script fails to load (offline, 404), the page shows a message and reloads itself every 30s until it succeeds. It then waits for `Device.ready`.
 2. It calls `POST https://app.cybercast.com.au/api/device/v1/apk/download` with `{"packageName": "com.cybercast"}`, which returns the latest version number and a presigned S3 download URL (valid 1 hour, no auth required).
 3. It compares the device's installed version (`Device.info.app_ver_code`) against the latest:
    - **Already up to date** → shows "Up to date" and silently re-checks every **6 hours** (the page can be left up indefinitely).
@@ -25,11 +25,11 @@ When opened outside a device (desktop browser), cybdevice's simulate mode kicks 
 
 ## Deployment
 
-Host `index.html` anywhere (S3, `client.cybercast.com.au`, or a local device path) and point a campaign web element at it. No sibling files needed.
+Host `index.html` **and** `cybdevice.2.2.1.js` together in the same directory (S3, `client.cybercast.com.au`, or a local device path) and point a campaign web element at `index.html` — the bridge script is referenced relatively.
 
 ## Rebuilding
 
-`index.html` has one inline script — the updater app logic — plus the two external references above. To change updater logic, edit the last `<script>` block in `index.html` directly — keep it **ES5-only** (no `let`/`const`, arrow functions, template literals, `fetch`, or Promises) and re-verify with:
+`index.html` has one inline script — the updater app logic — plus the external jQuery reference and the sibling `cybdevice.2.2.1.js`. To change updater logic, edit the last `<script>` block in `index.html` directly — keep it **ES5-only** (no `let`/`const`, arrow functions, template literals, `fetch`, or Promises) and re-verify with:
 
 ```bash
 npx es-check es5 <extracted-script.js>
@@ -39,5 +39,5 @@ npx es-check es5 <extracted-script.js>
 
 - ES5 compliance of the inline updater script (`es-check es5`).
 - Live API: returns 200 with presigned URL, CORS open (`Access-Control-Allow-Origin: *`, `Origin: null` accepted — works from `file://`).
-- Browser run (simulate mode): update-available path, manual-mode button, retry/backoff path, and bridge-load-failure guard all exercised; final end-to-end run used the real hosts (code.jquery.com, my.cybercast.com.au, live API) with no mocks.
+- Browser run (simulate mode): update-available path, manual-mode button, retry/backoff path, and bridge-load-failure guard all exercised; final end-to-end run used live code.jquery.com, the sibling cybdevice file, and the live API with no mocks.
 - Real-device install: verify by side-loading or pushing via a campaign to a test device running an old player version.
