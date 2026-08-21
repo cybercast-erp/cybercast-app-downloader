@@ -1,0 +1,348 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cybercast Update</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background: #0c1118;
+        color: #e8edf3;
+        font-family: "Segoe UI", Roboto, Arial, sans-serif;
+        overflow: hidden;
+      }
+      #screen {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 100%;
+        text-align: center;
+      }
+      #brand {
+        font-size: 34px;
+        font-weight: 300;
+        letter-spacing: 6px;
+        text-transform: uppercase;
+        color: #ffffff;
+        margin-bottom: 28px;
+      }
+      #status {
+        font-size: 22px;
+        font-weight: 400;
+        color: #9fb3c8;
+        min-height: 30px;
+      }
+      #spinner {
+        margin: 26px auto 0 auto;
+        width: 34px;
+        height: 34px;
+        border: 3px solid #24303f;
+        border-top-color: #4da3ff;
+        border-radius: 50%;
+        -webkit-animation: spin 1s linear infinite;
+        animation: spin 1s linear infinite;
+      }
+      #spinner.hidden {
+        display: none;
+      }
+      @-webkit-keyframes spin {
+        to {
+          -webkit-transform: rotate(360deg);
+        }
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      #installBtn {
+        display: none;
+        margin-top: 30px;
+        padding: 16px 44px;
+        font-size: 20px;
+        color: #ffffff;
+        background: #1d6fd1;
+        border: 0;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      #installBtn:active {
+        background: #175aa9;
+      }
+      #corner {
+        position: absolute;
+        right: 12px;
+        bottom: 10px;
+        font-size: 12px;
+        color: #4a5a6a;
+      }
+      #simFlag {
+        position: absolute;
+        left: 12px;
+        bottom: 10px;
+        font-size: 12px;
+        color: #4a5a6a;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="screen">
+      <div id="brand">Cybercast</div>
+      <div id="status">Starting&hellip;</div>
+      <div id="spinner"></div>
+      <button id="installBtn" type="button">Install update</button>
+    </div>
+    <div id="simFlag">simulation mode</div>
+    <div id="corner"></div>
+
+    <script src="http://code.jquery.com/jquery-1.11.3.min.js"></script>
+    <script src="http://my.cybercast.com.au/js/device/cybdevice.2.2.1.js"></script>
+    <script>
+      /* Cybercast APK self-update — ES5 only (Chrome 39 WebView) */
+      (function () {
+        "use strict";
+
+        /* cybdevice.2.2.1.js loads from an external host; if it failed
+	   (offline, 404), we cannot talk to the device — retry by reloading. */
+        if (!window.Device) {
+          document.getElementById("status").innerHTML =
+            "Device bridge failed to load &mdash; retrying&hellip;";
+          setTimeout(function () {
+            window.location.reload();
+          }, 30000);
+          return;
+        }
+
+        var API_URL = "https://app.cybercast.com.au/api/device/v1/apk/download";
+        var PACKAGE_NAME = "com.cybercast";
+        var RECHECK_MS = 6 * 60 * 60 * 1000; /* 6 hours */
+        var INSTALL_WATCHDOG_MS = 15 * 60 * 1000; /* 15 minutes */
+        var BACKOFF_STEPS = [30, 60, 120, 240, 300]; /* seconds */
+
+        var manualMode = /[?&]manual=1(&|$)/.test(window.location.search);
+        var attempt = 0;
+        var retryTimer = null;
+        var countdownTimer = null;
+        var watchdogTimer = null;
+        var installDone = false;
+
+        var statusEl = document.getElementById("status");
+        var spinnerEl = document.getElementById("spinner");
+        var cornerEl = document.getElementById("corner");
+        var buttonEl = document.getElementById("installBtn");
+        var simFlagEl = document.getElementById("simFlag");
+
+        function log(msg) {
+          try {
+            Device.log("[apk-updater] " + msg, true);
+          } catch (e) {}
+        }
+
+        function setStatus(text, busy) {
+          statusEl.innerHTML = text;
+          spinnerEl.className = busy ? "" : "hidden";
+        }
+
+        function setCorner(latestVersion) {
+          var current = currentVersion();
+          var parts = [];
+          parts.push("installed v" + (current > 0 ? current : "?"));
+          if (latestVersion) parts.push("latest v" + latestVersion);
+          if (Device.info && Device.info.device_name) parts.push(Device.info.device_name);
+          cornerEl.innerHTML = parts.join(" &middot; ");
+        }
+
+        function currentVersion() {
+          var v = parseInt(Device.info && Device.info.app_ver_code, 10);
+          return isNaN(v) ? 0 : v;
+        }
+
+        function clearTimers() {
+          if (retryTimer) {
+            clearTimeout(retryTimer);
+            retryTimer = null;
+          }
+          if (countdownTimer) {
+            clearInterval(countdownTimer);
+            countdownTimer = null;
+          }
+          if (watchdogTimer) {
+            clearTimeout(watchdogTimer);
+            watchdogTimer = null;
+          }
+        }
+
+        function apiCheck(onOk, onErr) {
+          var xhr = new XMLHttpRequest();
+          xhr.open("POST", API_URL, true);
+          xhr.setRequestHeader("Content-Type", "application/json");
+          xhr.timeout = 30000;
+          xhr.onreadystatechange = function () {
+            if (xhr.readyState !== 4) return;
+            if (xhr.status === 200) {
+              var resp = null;
+              try {
+                resp = JSON.parse(xhr.responseText);
+              } catch (e) {}
+              if (resp && resp.downloadUrl && resp.version) {
+                onOk(resp);
+              } else {
+                onErr("bad API response: " + String(xhr.responseText).substring(0, 200));
+              }
+            } else {
+              onErr("API HTTP " + xhr.status);
+            }
+          };
+          xhr.ontimeout = function () {
+            onErr("API timeout");
+          };
+          try {
+            xhr.send(JSON.stringify({ packageName: PACKAGE_NAME }));
+          } catch (e) {
+            onErr("API send failed: " + e.message);
+          }
+        }
+
+        function checkForUpdate(installIfBehind) {
+          clearTimers();
+          setStatus("Checking for updates&hellip;", true);
+          log("checking for updates (installed v" + currentVersion() + ")");
+
+          apiCheck(
+            function (resp) {
+              setCorner(resp.version);
+              if (currentVersion() >= resp.version) {
+                upToDate(resp.version);
+              } else if (installIfBehind) {
+                install(resp);
+              } else {
+                /* manual mode: offer the button */
+                setStatus("Update available: v" + resp.version, false);
+                buttonEl.style.display = "inline-block";
+                log("update available v" + resp.version + " (manual mode, waiting for tap)");
+              }
+            },
+            function (reason) {
+              scheduleRetry(reason, manualMode ? false : true);
+            }
+          );
+        }
+
+        function install(resp) {
+          if (!Device.isDeviceRunning()) {
+            setStatus(
+              "Update available: v" + resp.version + " (not installing &mdash; no device)",
+              false
+            );
+            log("simulation mode: would install v" + resp.version + " from " + resp.downloadUrl);
+            scheduleRecheck();
+            return;
+          }
+
+          setStatus("Downloading &amp; installing update&hellip;", true);
+          log("installing " + resp.packageName + " v" + resp.version);
+          try {
+            Device.keepActive(true);
+          } catch (e) {}
+
+          watchdogTimer = setTimeout(function () {
+            if (!installDone) {
+              scheduleRetry(
+                "install watchdog expired (" + INSTALL_WATCHDOG_MS / 60000 + " min, no callback)",
+                true
+              );
+            }
+          }, INSTALL_WATCHDOG_MS);
+
+          Device.installApk(
+            {
+              package: resp.packageName,
+              url: resp.downloadUrl,
+              apk_version: resp.version,
+              auto_run: true,
+            },
+            function (result) {
+              installDone = true;
+              clearTimers();
+              if (result === "installed") {
+                log("already installed at v" + resp.version);
+                upToDate(resp.version);
+              } else {
+                log("install success (v" + resp.version + "), app restarting");
+                setStatus("Update installed &mdash; restarting&hellip;", true);
+              }
+            },
+            function (result) {
+              installDone = true;
+              clearTimers();
+              scheduleRetry("install failed: " + result, true);
+            }
+          );
+        }
+
+        function upToDate(latestVersion) {
+          attempt = 0;
+          setStatus("Up to date (v" + latestVersion + ")", false);
+          log("up to date at v" + latestVersion);
+          scheduleRecheck();
+        }
+
+        function scheduleRecheck() {
+          clearTimers();
+          retryTimer = setTimeout(function () {
+            checkForUpdate(!manualMode);
+          }, RECHECK_MS);
+        }
+
+        function scheduleRetry(reason, installIfBehind) {
+          clearTimers();
+          installDone = false;
+          var delay = BACKOFF_STEPS[Math.min(attempt, BACKOFF_STEPS.length - 1)];
+          attempt++;
+          try {
+            Device.logError("[apk-updater] " + reason + " — retry #" + attempt + " in " + delay + "s");
+          } catch (e) {}
+
+          var remaining = delay;
+          setStatus("Retrying in " + remaining + "s&hellip;", false);
+          countdownTimer = setInterval(function () {
+            remaining--;
+            if (remaining > 0) {
+              setStatus("Retrying in " + remaining + "s&hellip;", false);
+            }
+          }, 1000);
+          retryTimer = setTimeout(function () {
+            checkForUpdate(installIfBehind);
+          }, delay * 1000);
+        }
+
+        buttonEl.onclick = function () {
+          buttonEl.style.display = "none";
+          attempt = 0;
+          /* re-check on tap: presigned URLs expire after 1 hour */
+          checkForUpdate(true);
+        };
+
+        window.onerror = function (msg, src, line) {
+          log("js error: " + msg + " @" + line);
+        };
+
+        Device.ready(function () {
+          if (!Device.isDeviceRunning()) {
+            simFlagEl.style.display = "block";
+          }
+          setCorner(null);
+          checkForUpdate(!manualMode);
+        });
+      })();
+    </script>
+  </body>
+</html>
