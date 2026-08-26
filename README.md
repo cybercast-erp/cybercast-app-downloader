@@ -19,10 +19,10 @@ The legacy player derives the local filename from everything after the last `/` 
 
 A WebView-initiated install is only **silent** when something on the device holds the system permission `INSTALL_PACKAGES`:
 
-- If the privileged companion app **`com.cybercast.service`** is installed, the player delegates the install to it (the page passes `use_service: true` to make this explicit) and no Android prompt appears. The page gets no progress callbacks on this path — it waits until the app restarts, or the 15-minute watchdog retries.
-- If the service app is absent (and the player itself isn't a platform-signed/priv-app on that firmware), Android **always shows the install confirmation prompt** — nothing the page can do avoids it. Options: accept the prompt once (after v3155 the new player manages its own updates), or `adb install -r` the APK directly.
+On load the page probes for the privileged companion app **`com.cybercast.service`** (an `installApk` call with no URL answers `installed` when the package exists) and the result decides the install path:
 
-On load the page probes for `com.cybercast.service` and reports the result in the log panel ("present" / "NOT detected").
+- **Service present** → the page broadcasts `com.cybercast.service.UPDATE_APK` directly via `Device.triggerIntent` with the `installUrl`/`auto_run` extras. The service downloads and installs **silently** — this bypasses the old player's installer (and its prompt) entirely, so it works even on player versions whose own install flow can't delegate. No callbacks come back on this path: on success the app restarts; otherwise the 15-minute watchdog retries.
+- **Service absent** → falls back to `Device.installApk` through the player. If the player isn't a platform-signed/priv-app on that firmware, Android **always shows the install confirmation prompt** — nothing the page can do avoids it. Options: accept the prompt once (after v3155 the new player manages its own updates), or `adb install -r` the APK directly.
 
 ## URL parameters
 

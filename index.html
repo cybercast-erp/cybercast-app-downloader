@@ -169,6 +169,7 @@
         var watchdogTimer = null;
         var installDone = false;
         var installing = false;
+        var serviceAvailable = false;
 
         var statusEl = document.getElementById("status");
         var spinnerEl = document.getElementById("spinner");
@@ -282,7 +283,6 @@
           }
 
           setStatus("Downloading &amp; installing update&hellip;", true);
-          log("installing " + resp.packageName + " v" + resp.version);
           installing = true;
           try {
             Device.keepActive(true);
@@ -290,6 +290,21 @@
 
           armWatchdog();
 
+          if (serviceAvailable) {
+            /* silent path: broadcast straight to the privileged
+	       com.cybercast.service app — bypasses the player's own
+	       installer (and its prompt) entirely. No callbacks come
+	       back; on success the app restarts, otherwise the
+	       watchdog retries. */
+            log("requesting silent install of v" + resp.version + " via com.cybercast.service");
+            Device.triggerIntent({
+              intent: "com.cybercast.service.UPDATE_APK",
+              extras: { installUrl: resp.downloadUrl, auto_run: true },
+            });
+            return;
+          }
+
+          log("installing " + resp.packageName + " v" + resp.version);
           Device.installApk(
             {
               package: resp.packageName,
@@ -423,35 +438,49 @@
                   : "no Device.info")
             );
           } catch (e) {}
-          logInstallerService();
           setCorner(null);
-          checkForUpdate(!manualMode);
+          probeInstallerService(function () {
+            checkForUpdate(!manualMode);
+          });
         });
 
-        /* diagnostic: silent install needs the privileged
-	   com.cybercast.service app. Probing installApk with no URL
-	   answers "installed"/"disabled" when the package exists and
-	   stays silent when it does not. */
-        function logInstallerService() {
-          if (!Device.isDeviceRunning()) return;
-          var answered = false;
-          var probeTimer = setTimeout(function () {
-            if (!answered) {
-              logError("com.cybercast.service NOT detected: Android will prompt for install");
+        /* silent install needs the privileged com.cybercast.service app.
+	   Probing installApk with no URL answers "installed"/"disabled"
+	   when the package exists and stays silent when it does not.
+	   The result decides the install path, so the first update check
+	   waits for it (8s max). */
+        function probeInstallerService(done) {
+          if (!Device.isDeviceRunning()) {
+            done();
+            return;
+          }
+          var finished = false;
+          function finish() {
+            if (!finished) {
+              finished = true;
+              done();
             }
+          }
+          var probeTimer = setTimeout(function () {
+            log("com.cybercast.service NOT detected: Android will prompt for install");
+            finish();
           }, 8000);
           function onProbe(status) {
-            answered = true;
             clearTimeout(probeTimer);
             if (status === "installed") {
-              log("com.cybercast.service present: updates should install silently");
+              serviceAvailable = true;
+              log("com.cybercast.service present: installing silently via service");
             } else {
-              logError("com.cybercast.service is " + status + ": silent install unavailable");
+              log("com.cybercast.service is " + status + ": silent install unavailable");
             }
+            finish();
           }
           try {
             Device.installApk({ package: "com.cybercast.service" }, onProbe, onProbe);
-          } catch (e) {}
+          } catch (e) {
+            clearTimeout(probeTimer);
+            finish();
+          }
         }
       })();
     </script>
