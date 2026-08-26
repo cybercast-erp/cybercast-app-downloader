@@ -311,10 +311,6 @@
               url: resp.downloadUrl,
               apk_version: resp.version,
               auto_run: true,
-              /* when the privileged com.cybercast.service app is on the
-	         device, the player delegates to it and installs silently
-	         (no Android prompt). Ignored when the service is absent. */
-              use_service: true,
             },
             function (result) {
               if (!installing) {
