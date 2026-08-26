@@ -18,7 +18,8 @@ The legacy player derives the local filename from everything after the last `/` 
 
 | Param | Effect |
 |-------|--------|
-| `?manual=1` | No auto-install. When an update is available an **Install update** button is shown; a technician taps it to install. (Tapping re-fetches a fresh download URL first.) |
+| `?manual=1` | No auto-install. When an update is available an **Install update** button is shown; a technician taps it to install. |
+| `?debug=1` | Shows an on-screen log panel (timestamped, last 200 lines) at the bottom of the page — for devices where the browser console is unreachable. The panel also **auto-appears on any error** (install failure, retry, JS error) even without the param. |
 
 ## On-screen UI
 

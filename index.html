@@ -98,6 +98,26 @@
         color: #7a757f;
         display: none;
       }
+      #logPanel {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        max-height: 40%;
+        overflow-y: auto;
+        background: rgba(30, 41, 59, 0.92);
+        color: #e2e8f0;
+        font-family: monospace;
+        font-size: 11px;
+        line-height: 1.5;
+        padding: 6px 10px 26px 10px;
+        white-space: pre-wrap;
+        word-break: break-all;
+        display: none;
+      }
+      #logPanel .err {
+        color: #ff8a80;
+      }
     </style>
   </head>
   <body>
@@ -107,6 +127,7 @@
       <div id="spinner"></div>
       <button id="installBtn" type="button">Install update</button>
     </div>
+    <div id="logPanel"></div>
     <div id="simFlag">simulation mode</div>
     <div id="corner"></div>
 
@@ -141,6 +162,7 @@
         var BACKOFF_STEPS = [30, 60, 120, 240, 300]; /* seconds */
 
         var manualMode = /[?&]manual=1(&|$)/.test(window.location.search);
+        var debugMode = /[?&]debug=1(&|$)/.test(window.location.search);
         var attempt = 0;
         var retryTimer = null;
         var countdownTimer = null;
@@ -152,10 +174,45 @@
         var cornerEl = document.getElementById("corner");
         var buttonEl = document.getElementById("installBtn");
         var simFlagEl = document.getElementById("simFlag");
+        var logPanelEl = document.getElementById("logPanel");
+
+        function showLogs() {
+          logPanelEl.style.display = "block";
+        }
+
+        function pad2(n) {
+          return (n < 10 ? "0" : "") + n;
+        }
+
+        function uiLog(msg, isError) {
+          var d = new Date();
+          var line = document.createElement("div");
+          if (isError) line.className = "err";
+          line.appendChild(
+            document.createTextNode(
+              pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds()) + " " + msg
+            )
+          );
+          logPanelEl.appendChild(line);
+          while (logPanelEl.childNodes.length > 200) {
+            logPanelEl.removeChild(logPanelEl.firstChild);
+          }
+          logPanelEl.scrollTop = logPanelEl.scrollHeight;
+          /* errors force the panel open, even without ?debug=1 */
+          if (isError) showLogs();
+        }
 
         function log(msg) {
+          uiLog(msg, false);
           try {
             Device.log("[apk-updater] " + msg, true);
+          } catch (e) {}
+        }
+
+        function logError(msg) {
+          uiLog(msg, true);
+          try {
+            Device.logError("[apk-updater] " + msg);
           } catch (e) {}
         }
 
@@ -283,9 +340,7 @@
           installDone = false;
           var delay = BACKOFF_STEPS[Math.min(attempt, BACKOFF_STEPS.length - 1)];
           attempt++;
-          try {
-            Device.logError("[apk-updater] " + reason + " — retry #" + attempt + " in " + delay + "s");
-          } catch (e) {}
+          logError(reason + " — retry #" + attempt + " in " + delay + "s");
 
           var remaining = delay;
           setStatus("Retrying in " + remaining + "s&hellip;", false);
@@ -307,13 +362,28 @@
         };
 
         window.onerror = function (msg, src, line) {
-          log("js error: " + msg + " @" + line);
+          logError("js error: " + msg + " @" + line);
         };
+
+        if (debugMode) showLogs();
 
         Device.ready(function () {
           if (!Device.isDeviceRunning()) {
             simFlagEl.style.display = "block";
           }
+          try {
+            log(
+              "device ready: " +
+                (Device.info
+                  ? "app_ver_code=" +
+                    Device.info.app_ver_code +
+                    " device=" +
+                    Device.info.device_name +
+                    " os=" +
+                    Device.info.platform_ver
+                  : "no Device.info")
+            );
+          } catch (e) {}
           setCorner(null);
           checkForUpdate(!manualMode);
         });
