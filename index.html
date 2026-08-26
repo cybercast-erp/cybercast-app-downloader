@@ -168,6 +168,7 @@
         var countdownTimer = null;
         var watchdogTimer = null;
         var installDone = false;
+        var installing = false;
 
         var statusEl = document.getElementById("status");
         var spinnerEl = document.getElementById("spinner");
@@ -282,18 +283,12 @@
 
           setStatus("Downloading &amp; installing update&hellip;", true);
           log("installing " + resp.packageName + " v" + resp.version);
+          installing = true;
           try {
             Device.keepActive(true);
           } catch (e) {}
 
-          watchdogTimer = setTimeout(function () {
-            if (!installDone) {
-              scheduleRetry(
-                "install watchdog expired (" + INSTALL_WATCHDOG_MS / 60000 + " min, no callback)",
-                true
-              );
-            }
-          }, INSTALL_WATCHDOG_MS);
+          armWatchdog();
 
           Device.installApk(
             {
@@ -301,8 +296,17 @@
               url: resp.downloadUrl,
               apk_version: resp.version,
               auto_run: true,
+              /* when the privileged com.cybercast.service app is on the
+	         device, the player delegates to it and installs silently
+	         (no Android prompt). Ignored when the service is absent. */
+              use_service: true,
             },
             function (result) {
+              if (!installing) {
+                log("ignored late callback: " + result);
+                return;
+              }
+              installing = false;
               installDone = true;
               clearTimers();
               if (result === "installed") {
@@ -314,11 +318,45 @@
               }
             },
             function (result) {
+              if (!installing) {
+                log("ignored late callback: " + result);
+                return;
+              }
+              /* the player reports progress through this callback too:
+	         cybdevice routes every status that is not "success" /
+	         "installed" here, including "downloading" and "downloaded".
+	         Treating those as failures caused overlapping install
+	         attempts that corrupted the in-progress download. */
+              if (result === "downloading") {
+                setStatus("Downloading update&hellip;", true);
+                log("device: downloading");
+                armWatchdog();
+                return;
+              }
+              if (result === "downloaded") {
+                setStatus("Installing update&hellip;", true);
+                log("device: download complete, installing (may take several minutes)");
+                armWatchdog();
+                return;
+              }
+              installing = false;
               installDone = true;
               clearTimers();
               scheduleRetry("install failed: " + result, true);
             }
           );
+        }
+
+        function armWatchdog() {
+          if (watchdogTimer) clearTimeout(watchdogTimer);
+          watchdogTimer = setTimeout(function () {
+            if (!installDone) {
+              scheduleRetry(
+                "install watchdog expired (" + INSTALL_WATCHDOG_MS / 60000 + " min, no callback)",
+                true
+              );
+            }
+          }, INSTALL_WATCHDOG_MS);
         }
 
         function upToDate(latestVersion) {
@@ -338,6 +376,7 @@
         function scheduleRetry(reason, installIfBehind) {
           clearTimers();
           installDone = false;
+          installing = false;
           var delay = BACKOFF_STEPS[Math.min(attempt, BACKOFF_STEPS.length - 1)];
           attempt++;
           logError(reason + " — retry #" + attempt + " in " + delay + "s");
@@ -384,9 +423,36 @@
                   : "no Device.info")
             );
           } catch (e) {}
+          logInstallerService();
           setCorner(null);
           checkForUpdate(!manualMode);
         });
+
+        /* diagnostic: silent install needs the privileged
+	   com.cybercast.service app. Probing installApk with no URL
+	   answers "installed"/"disabled" when the package exists and
+	   stays silent when it does not. */
+        function logInstallerService() {
+          if (!Device.isDeviceRunning()) return;
+          var answered = false;
+          var probeTimer = setTimeout(function () {
+            if (!answered) {
+              logError("com.cybercast.service NOT detected: Android will prompt for install");
+            }
+          }, 8000);
+          function onProbe(status) {
+            answered = true;
+            clearTimeout(probeTimer);
+            if (status === "installed") {
+              log("com.cybercast.service present: updates should install silently");
+            } else {
+              logError("com.cybercast.service is " + status + ": silent install unavailable");
+            }
+          }
+          try {
+            Device.installApk({ package: "com.cybercast.service" }, onProbe, onProbe);
+          } catch (e) {}
+        }
       })();
     </script>
   </body>
