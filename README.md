@@ -5,11 +5,14 @@ A single self-contained HTML page (`index.html`) that upgrades the `com.cybercas
 ## How it works
 
 1. The page loads two external scripts: jQuery 1.11.3 from `https://code.jquery.com/jquery-1.11.3.min.js` (the same URL/version cybdevice itself falls back to; if it fails, cybdevice self-loads jQuery) and the device bridge from `cybdevice.2.2.1.js` — this repo's copy, referenced relatively, so it must be deployed as a sibling of `index.html`. If the bridge script fails to load (offline, 404), the page shows a message and reloads itself every 30s until it succeeds. It then waits for `Device.ready`.
-2. It calls `POST https://app.cybercast.com.au/api/device/v1/apk/download` with `{"packageName": "com.cybercast"}`, which returns the latest version number and a presigned S3 download URL (valid 1 hour, no auth required).
-3. It compares the device's installed version (`Device.info.app_ver_code`) against the latest:
-   - **Already up to date** → shows "Up to date" and silently re-checks every **6 hours** (the page can be left up indefinitely).
-   - **Behind** → calls `Device.installApk({package, url, apk_version, auto_run: true}, …)`. The Android side downloads and installs the APK, then relaunches the app.
-4. **Any failure** (API unreachable, download/install error, or no install callback within a 15-minute watchdog) is logged via `Device.logError` and retried **forever** with capped exponential backoff: 30s → 60s → 120s → 240s → 300s (max). A fresh presigned URL is fetched on every attempt.
+2. It compares the device's installed version (`Device.info.app_ver_code`) against the **pinned target version (3155)**:
+   - **Already at or above 3155** → shows "Up to date" and silently re-checks every **6 hours** (the page can be left up indefinitely).
+   - **Behind** → calls `Device.installApk({package, url, apk_version, auto_run: true}, …)` with the **static APK URL** `https://media-manager-bucket-dev.s3.ap-southeast-2.amazonaws.com/com.cybercast-3155.apk`. The Android side downloads and installs the APK, then relaunches the app.
+3. **Any failure** (download/install error, or no install callback within a 15-minute watchdog) is logged via `Device.logError` and retried **forever** with capped exponential backoff: 30s → 60s → 120s → 240s → 300s (max).
+
+### Why a pinned static URL instead of the download API
+
+The legacy player derives the local filename from everything after the last `/` in the download URL (`UpdaterPackageThread.java`: `new File(downloadUrl).getName()`). The device API's presigned S3 URLs carry a ~1.5KB query string, blowing past the 255-byte Linux filename limit — **every download fails** with "Failed to download an APK file". The URL must therefore be static and query-less. The version is pinned to match the URL (using the API's "latest" version with a fixed 3155 APK would loop forever once a newer version is released). Once on v3155 the new player self-updates. To ship a newer APK via this page, upload it to the bucket and bump `APK_URL` + `APK_VERSION` in `index.html`.
 
 ## URL parameters
 

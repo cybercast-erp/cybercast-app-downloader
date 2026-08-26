@@ -128,7 +128,13 @@
           return;
         }
 
-        var API_URL = "https://app.cybercast.com.au/api/device/v1/apk/download";
+        /* Static, query-less URL: the legacy player derives the local file
+	   name from everything after the last "/" in the URL, so presigned
+	   URLs (with their ~1.5KB query string) exceed the 255-byte filename
+	   limit and every download fails. */
+        var APK_URL =
+          "https://media-manager-bucket-dev.s3.ap-southeast-2.amazonaws.com/com.cybercast-3155.apk";
+        var APK_VERSION = 3155;
         var PACKAGE_NAME = "com.cybercast";
         var RECHECK_MS = 6 * 60 * 60 * 1000; /* 6 hours */
         var INSTALL_WATCHDOG_MS = 15 * 60 * 1000; /* 15 minutes */
@@ -187,63 +193,26 @@
           }
         }
 
-        function apiCheck(onOk, onErr) {
-          var xhr = new XMLHttpRequest();
-          xhr.open("POST", API_URL, true);
-          xhr.setRequestHeader("Content-Type", "application/json");
-          xhr.timeout = 30000;
-          xhr.onreadystatechange = function () {
-            if (xhr.readyState !== 4) return;
-            if (xhr.status === 200) {
-              var resp = null;
-              try {
-                resp = JSON.parse(xhr.responseText);
-              } catch (e) {}
-              if (resp && resp.downloadUrl && resp.version) {
-                onOk(resp);
-              } else {
-                onErr("bad API response: " + String(xhr.responseText).substring(0, 200));
-              }
-            } else {
-              onErr("API HTTP " + xhr.status);
-            }
-          };
-          xhr.ontimeout = function () {
-            onErr("API timeout");
-          };
-          try {
-            xhr.send(JSON.stringify({ packageName: PACKAGE_NAME }));
-          } catch (e) {
-            onErr("API send failed: " + e.message);
-          }
-        }
-
         function checkForUpdate(installIfBehind) {
           clearTimers();
           setStatus("Checking for updates&hellip;", true);
           log("checking for updates (installed v" + currentVersion() + ")");
 
-          apiCheck(
-            function (resp) {
-              setCorner(resp.version);
-              if (currentVersion() >= resp.version) {
-                upToDate(resp.version);
-              } else if (installIfBehind) {
-                install(resp);
-              } else {
-                /* manual mode: offer the button */
-                setStatus("Update available: v" + resp.version, false);
-                buttonEl.style.display = "inline-block";
-                log("update available v" + resp.version + " (manual mode, waiting for tap)");
-              }
-            },
-            function (reason) {
-              scheduleRetry(reason, manualMode ? false : true);
-            }
-          );
+          setCorner(APK_VERSION);
+          if (currentVersion() >= APK_VERSION) {
+            upToDate(APK_VERSION);
+          } else if (installIfBehind) {
+            install();
+          } else {
+            /* manual mode: offer the button */
+            setStatus("Update available: v" + APK_VERSION, false);
+            buttonEl.style.display = "inline-block";
+            log("update available v" + APK_VERSION + " (manual mode, waiting for tap)");
+          }
         }
 
-        function install(resp) {
+        function install() {
+          var resp = { packageName: PACKAGE_NAME, downloadUrl: APK_URL, version: APK_VERSION };
           if (!Device.isDeviceRunning()) {
             setStatus(
               "Update available: v" + resp.version + " (not installing &mdash; no device)",
@@ -334,7 +303,6 @@
         buttonEl.onclick = function () {
           buttonEl.style.display = "none";
           attempt = 0;
-          /* re-check on tap: presigned URLs expire after 1 hour */
           checkForUpdate(true);
         };
 
