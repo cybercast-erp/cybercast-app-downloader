@@ -153,9 +153,21 @@
 	   name from everything after the last "/" in the URL, so presigned
 	   URLs (with their ~1.5KB query string) exceed the 255-byte filename
 	   limit and every download fails. */
+        /* ?version=N&webengine=gecko&abi=armeabi-v7a picks the build;
+	   defaults to the universal system build of DEFAULT_VERSION. */
+        var DEFAULT_VERSION = 3198;
+        var APK_VERSION = parseInt(queryParam("version"), 10) || DEFAULT_VERSION;
+        var webengine = queryParam("webengine");
+        var abi = queryParam("abi");
+        var variant = webengine && webengine !== "system" ? "-" + webengine + "-" + abi : "";
         var APK_URL =
-          "https://device-apk-uploads-846719029431-ap-southeast-2.s3.ap-southeast-2.amazonaws.com/com.cybercast/3198/com.cybercast-3198.apk";
-        var APK_VERSION = 3198;
+          "https://device-apk-uploads-846719029431-ap-southeast-2.s3.ap-southeast-2.amazonaws.com/com.cybercast/" +
+          APK_VERSION + "/com.cybercast-" + APK_VERSION + variant + ".apk";
+
+        function queryParam(name) {
+          var m = new RegExp("[?&]" + name + "=([^&]*)").exec(window.location.search);
+          return m ? decodeURIComponent(m[1]) : null;
+        }
         var PACKAGE_NAME = "com.cybercast";
         var RECHECK_MS = 6 * 60 * 60 * 1000; /* 6 hours */
         var INSTALL_WATCHDOG_MS = 15 * 60 * 1000; /* 15 minutes */

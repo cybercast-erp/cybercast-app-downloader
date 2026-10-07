@@ -7,13 +7,13 @@ A single self-contained HTML page (`index.html`) that upgrades the `com.cybercas
 1. The page loads two external scripts: jQuery 1.11.3 from `https://code.jquery.com/jquery-1.11.3.min.js` (the same URL/version cybdevice itself falls back to; if it fails, cybdevice self-loads jQuery) and the device bridge from `cybdevice.2.2.1.js` — this repo's copy, referenced relatively, so it must be deployed as a sibling of `index.html`. If the bridge script fails to load (offline, 404), the page shows a message and reloads itself every 30s until it succeeds. It then waits for `Device.ready`.
 2. It compares the device's installed version (`Device.info.app_ver_code`) against the **pinned target version (3198)**:
    - **Already at or above 3198** → shows "Up to date" and silently re-checks every **6 hours** (the page can be left up indefinitely).
-   - **Behind** → installs the **static APK URL** `https://device-apk-uploads-846719029431-ap-southeast-2.s3.ap-southeast-2.amazonaws.com/com.cybercast/3198/com.cybercast-3198.apk` (see [Silent vs prompted install](#silent-vs-prompted-install) for the two install routes). The Android side downloads and installs the APK, then relaunches the app.
+   - **Behind** → installs the **static APK URL** `https://device-apk-uploads-846719029431-ap-southeast-2.s3.ap-southeast-2.amazonaws.com/com.cybercast/{version}/com.cybercast-{version}[-{webengine}-{abi}].apk` (from the [URL parameters](#url-parameters); default the universal 3198 build) (see [Silent vs prompted install](#silent-vs-prompted-install) for the two install routes). The Android side downloads and installs the APK, then relaunches the app.
 3. The player reports progress (`downloading`, `downloaded`) through the same bridge callback as failures — the page treats those as progress (updating the status text and re-arming the watchdog), **not** as failures. Only real failure statuses (`failed download`, `failed Install`, …) trigger a retry; late callbacks from a superseded attempt are ignored.
 4. **Any real failure** (download/install error, or no callback within a 15-minute watchdog since the last progress event) is logged via `Device.logError` and retried **forever** with capped exponential backoff: 30s → 60s → 120s → 240s → 300s (max).
 
 ### Why a pinned static URL instead of the download API
 
-The legacy player derives the local filename from everything after the last `/` in the download URL (`UpdaterPackageThread.java`: `new File(downloadUrl).getName()`). The device API's presigned S3 URLs carry a ~1.5KB query string, blowing past the 255-byte Linux filename limit — **every download fails** with "Failed to download an APK file". The URL must therefore be static and query-less. The version is pinned to match the URL (using the API's "latest" version with a fixed 3198 APK would loop forever once a newer version is released). Once on v3198 the new player self-updates. To ship a newer APK via this page, upload it to the bucket and bump `APK_URL` + `APK_VERSION` in `index.html`.
+The legacy player derives the local filename from everything after the last `/` in the download URL (`UpdaterPackageThread.java`: `new File(downloadUrl).getName()`). The device API's presigned S3 URLs carry a ~1.5KB query string, blowing past the 255-byte Linux filename limit — **every download fails** with "Failed to download an APK file". The URL must therefore be static and query-less. The version is pinned to match the URL (using the API's "latest" version with a fixed 3198 APK would loop forever once a newer version is released). Once on v3198 the new player self-updates. To ship a newer APK via this page, upload it to the bucket and pass `?version=N` (or bump `DEFAULT_VERSION` in `index.html`).
 
 ### Silent vs prompted install
 
@@ -29,6 +29,8 @@ On load the page probes for the privileged companion app **`com.cybercast.servic
 | Param | Effect |
 |-------|--------|
 | `?manual=1` | No auto-install. When an update is available an **Install update** button is shown; a technician taps it to install. |
+| `?version=3198` | APK version to install (default **3198**). |
+| `?webengine=gecko&abi=armeabi-v7a` | Build variant: installs `com.cybercast-{version}-{webengine}-{abi}.apk`. Omitted (or `webengine=system`) → universal `com.cybercast-{version}.apk`. A non-system webengine needs `abi` (`armeabi-v7a` \| `arm64-v8a` \| …). |
 | `?debug=1` | Shows an on-screen log panel (timestamped, last 200 lines) at the bottom of the page — for devices where the browser console is unreachable. The panel also **auto-appears on any error** (install failure, retry, JS error) even without the param. |
 
 ## On-screen UI
