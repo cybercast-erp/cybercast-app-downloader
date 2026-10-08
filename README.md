@@ -37,6 +37,8 @@ On load the page probes for the privileged companion app **`com.cybercast.servic
 
 Minimal, public-presentable status screen in the CybercastNext app theme (PairEmptyScreen background: diagonal blue gradient `#bfdbfe → #e0f2fe → #c7d2fe` with dot-grid overlay, Cybercast blue `#00bce4` accents, embedded Cybercast PRO logo as a base64 data URI): state text ("Checking for updates…", "Downloading & installing update…", "Up to date (vN)", "Retrying in Ns…"), plus a small corner line for technicians: `installed vX · latest vY · <device name>`.
 
+Any failure (download/install error, watchdog timeout) shows a red **"Update failed: <reason>"** box under the status with the target version and APK URL. It stays up through the retry countdown and the next attempt, and clears only once an install succeeds or the device is up to date.
+
 When opened outside a device (desktop browser), cybdevice's simulate mode kicks in: the page runs the real version check against the live API but never calls `installApk`, and shows a "simulation mode" marker bottom-left.
 
 ## Deployment
